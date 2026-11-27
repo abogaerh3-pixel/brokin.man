@@ -254,3 +254,308 @@ async function uploadToSupabase(file, folder = "uploads") {
 // عرض رسالة واحدة داخل واجهة المحادثة
 function renderMessage(docId, msg) {
   const messagesEl = document.getElementById("messages");
+  if (!messagesEl) return;
+
+  const existing = document.getElementById(`msg_${docId}`);
+  if (existing) existing.remove();
+
+  const isMine = currentUser && msg.uid === currentUser.uid;
+  const row = document.createElement("div");
+  row.id = `msg_${docId}`;
+  row.className = `msg-row ${isMine ? "mine" : "other"}`;
+
+  const bubble = document.createElement("div");
+  bubble.className = "msg-bubble";
+
+  if (msg.type === "image" && msg.mediaUrl) {
+    const img = document.createElement("img");
+    img.src = msg.mediaUrl;
+    img.alt = "صورة";
+    img.className = "msg-image";
+    img.loading = "lazy";
+    img.onclick = () => window.openMediaLightbox("image", msg.mediaUrl);
+    bubble.appendChild(img);
+  } else if (msg.type === "video" && msg.mediaUrl) {
+    const vid = document.createElement("video");
+    vid.src = msg.mediaUrl;
+    vid.controls = true;
+    vid.playsInline = true;
+    vid.className = "msg-video";
+    bubble.appendChild(vid);
+  } else if (msg.type === "audio" && msg.mediaUrl) {
+    const aud = document.createElement("audio");
+    aud.src = msg.mediaUrl;
+    aud.controls = true;
+    aud.className = "msg-audio";
+    bubble.appendChild(aud);
+  }
+
+  if (msg.text) {
+    const p = document.createElement("div");
+    p.className = "msg-text";
+    p.textContent = msg.text;
+    bubble.appendChild(p);
+  }
+
+  const meta = document.createElement("div");
+  meta.className = "msg-meta";
+  const timeStr = msg.createdAt?.toDate
+    ? msg.createdAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
+  meta.textContent = timeStr;
+  bubble.appendChild(meta);
+
+  row.appendChild(bubble);
+  messagesEl.appendChild(row);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// الاستماع للرسائل من Firestore
+function startMessagesListener() {
+  if (unsubscribeMessages) {
+    unsubscribeMessages();
+    unsubscribeMessages = null;
+  }
+
+  const messagesEl = document.getElementById("messages");
+  if (messagesEl) messagesEl.innerHTML = "";
+
+  isInitialLoad = true;
+  loadPersistedSeenIds();
+
+  const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
+  unsubscribeMessages = onSnapshot(q, (snapshot) => {
+    snapshot.docChanges().forEach((change) => {
+      if (change.type === "added" || change.type === "modified") {
+        const msgId = change.doc.id;
+        const data = change.doc.data() || {};
+        renderMessage(msgId, data);
+
+        const isNewIncoming =
+          change.type === "added" &&
+          !isInitialLoad &&
+          !knownMessageIds.has(msgId) &&
+          currentUser &&
+          data.uid !== currentUser.uid;
+
+        if (isNewIncoming) {
+          knownMessageIds.add(msgId);
+          persistSeenIds();
+          playNotificationTone(true);
+          if (!isChatOpen) {
+            unreadCount += 1;
+            updateUnreadBadge();
+          }
+        } else if (change.type === "added") {
+          knownMessageIds.add(msgId);
+        }
+      }
+    });
+
+    if (isInitialLoad) {
+      persistSeenIds();
+      isInitialLoad = false;
+    }
+  });
+}
+
+function updateUnreadBadge() {
+  const badge = document.getElementById("unreadBadge");
+  if (!badge) return;
+  if (unreadCount > 0) {
+    badge.textContent = String(unreadCount);
+    badge.style.display = "inline-flex";
+  } else {
+    badge.style.display = "none";
+  }
+}
+
+// إرسال رسالة نصية
+async function sendTextMessage() {
+  const input = document.getElementById("messageInput");
+  if (!input || !currentUser) return;
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = "";
+  try {
+    await addDoc(collection(db, "messages"), {
+      uid: currentUser.uid,
+      email: currentUser.email || "",
+      type: "text",
+      text,
+      createdAt: serverTimestamp()
+    });
+    playNotificationTone(false);
+  } catch (err) {
+    console.error("Failed to send message:", err);
+    input.value = text;
+  }
+}
+
+// إرسال ملف وسائط (صورة / فيديو / صوت)
+async function sendMediaFile(file, forcedType = null) {
+  if (!file || !currentUser) return;
+
+  let type = forcedType;
+  if (!type) {
+    if (file.type.startsWith("image/")) type = "image";
+    else if (file.type.startsWith("video/")) type = "video";
+    else if (file.type.startsWith("audio/")) type = "audio";
+    else type = "file";
+  }
+
+  const folderMap = {
+    image: "images",
+    video: "videos",
+    audio: "audio",
+    file: "files"
+  };
+
+  try {
+    const mediaUrl = await uploadToSupabase(file, folderMap[type] || "uploads");
+    await addDoc(collection(db, "messages"), {
+      uid: currentUser.uid,
+      email: currentUser.email || "",
+      type,
+      mediaUrl,
+      text: "",
+      createdAt: serverTimestamp()
+    });
+    playNotificationTone(false);
+  } catch (err) {
+    console.error("Media upload failed:", err);
+    alert(err.message || "تعذر رفع الملف");
+  }
+}
+
+// تسجيل الصوت
+async function toggleAudioRecording() {
+  const btn = document.getElementById("recordBtn");
+  if (!isRecording) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunks.push(e.data);
+      };
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+        const ext = blob.type.includes("mp4") ? "m4a" : "webm";
+        const file = new File([blob], `voice_${Date.now()}.${ext}`, { type: blob.type });
+        await sendMediaFile(file, "audio");
+      };
+      mediaRecorder.start();
+      isRecording = true;
+      if (btn) btn.classList.add("recording");
+    } catch (err) {
+      alert("يرجى السماح بالوصول إلى المايكروفون");
+    }
+  } else {
+    try {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+    } catch (e) {}
+    isRecording = false;
+    if (btn) btn.classList.remove("recording");
+  }
+}
+
+// إدارة حالة تسجيل الدخول والواجهة
+function showAuthScreen() {
+  const authScreen = document.getElementById("authScreen");
+  const chatScreen = document.getElementById("chatScreen");
+  if (authScreen) authScreen.style.display = "flex";
+  if (chatScreen) chatScreen.style.display = "none";
+  isChatOpen = false;
+}
+
+function showChatScreen() {
+  const authScreen = document.getElementById("authScreen");
+  const chatScreen = document.getElementById("chatScreen");
+  if (authScreen) authScreen.style.display = "none";
+  if (chatScreen) chatScreen.style.display = "flex";
+  isChatOpen = true;
+  unreadCount = 0;
+  updateUnreadBadge();
+}
+
+onAuthStateChanged(auth, async (user) => {
+  currentUser = user || null;
+  if (currentUser) {
+    showChatScreen();
+    startMessagesListener();
+    await registerPushToken();
+  } else {
+    if (unsubscribeMessages) {
+      unsubscribeMessages();
+      unsubscribeMessages = null;
+    }
+    showAuthScreen();
+  }
+});
+
+// ربط الأحداث بعد تحميل DOM
+document.addEventListener("DOMContentLoaded", () => {
+  const loginForm = document.getElementById("loginForm");
+  if (loginForm) {
+    loginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("emailInput")?.value?.trim() || "";
+      const password = document.getElementById("passwordInput")?.value || "";
+      const errEl = document.getElementById("authError");
+      if (errEl) errEl.textContent = "";
+
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (err) {
+        if (errEl) errEl.textContent = "بيانات الدخول غير صحيحة أو الحساب غير مفعل";
+      }
+    });
+  }
+
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      try {
+        await signOut(auth);
+      } catch (e) {}
+    });
+  }
+
+  const sendBtn = document.getElementById("sendBtn");
+  if (sendBtn) sendBtn.addEventListener("click", sendTextMessage);
+
+  const messageInput = document.getElementById("messageInput");
+  if (messageInput) {
+    messageInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendTextMessage();
+      }
+    });
+  }
+
+  const mediaInput = document.getElementById("mediaInput");
+  if (mediaInput) {
+    mediaInput.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (file) await sendMediaFile(file);
+      e.target.value = "";
+    });
+  }
+
+  const recordBtn = document.getElementById("recordBtn");
+  if (recordBtn) {
+    recordBtn.addEventListener("click", toggleAudioRecording);
+  }
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js").catch((err) => {
+      console.warn("SW registration warning:", err);
+    });
+  }
+});
