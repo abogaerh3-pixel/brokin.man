@@ -10,6 +10,8 @@ import {
   collection,
   addDoc,
   getDocs,
+  doc,
+  setDoc,
   query,
   orderBy,
   onSnapshot,
@@ -17,11 +19,19 @@ import {
   writeBatch,
   arrayUnion
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import {
+  getMessaging,
+  getToken,
+  onMessage
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 
 // إعدادات Supabase Storage
 const SUPABASE_URL = "https://ihajjvjupakohnovwvem.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_6MFGRFQLtoll_RsADVLpXw_EPAB-80h";
 const SUPABASE_BUCKET = "media";
+
+// ضع VAPID Key من Firebase Console -> Cloud Messaging -> Web Push certificates
+const VAPID_PUBLIC_KEY = "";
 
 // إعدادات Firebase
 const firebaseConfig = {
@@ -36,6 +46,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+let messaging = null;
+try {
+  messaging = getMessaging(app);
+} catch (e) {}
 
 let currentUser = null;
 let mediaRecorder = null;
@@ -124,7 +138,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") window.closeMediaLightbox();
 });
 
-// صوت واهتزاز تنبيه خفيف عند وصول رسالة أو إرسالها
+// صوت واهتزاز تنبيه خفيف
 function playNotificationTone(isIncoming = true) {
   try {
     if (isIncoming && "vibrate" in navigator) {
@@ -151,28 +165,47 @@ function playNotificationTone(isIncoming = true) {
   } catch (e) {}
 }
 
-// فحص حالة الإشعارات وعرضها بشكل متوافق مع PWA و Safari
 async function getNotifPermissionState() {
   if ("Notification" in window) {
     return Notification.permission;
   }
-  if ("serviceWorker" in navigator) {
-    try {
-      const reg = await navigator.serviceWorker.getRegistration();
-      if (reg && reg.pushManager) {
-        return await reg.pushManager.permissionState({ userVisibleOnly: true });
-      }
-    } catch (e) {}
-  }
   return "unsupported";
+}
+
+async function registerFcmTokenIfPossible() {
+  if (!messaging || !currentUser || !VAPID_PUBLIC_KEY) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const token = await getToken(messaging, {
+      vapidKey: VAPID_PUBLIC_KEY,
+      serviceWorkerRegistration: reg
+    });
+    if (token) {
+      await setDoc(
+        doc(db, "fcmTokens", currentUser.uid),
+        { uid: currentUser.uid, token, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+    }
+  } catch (e) {}
+}
+
+if (messaging) {
+  onMessage(messaging, (payload) => {
+    const isOutsideChat = !isChatOpen || document.hidden;
+    if (isOutsideChat) {
+      const title = payload.notification?.title || "رسالة جديدة في BROKIN";
+      const body = payload.notification?.body || "لديك رسالة جديدة";
+      showSystemNotificationNow(title, body);
+      unreadCount++;
+      updateUnreadBadge();
+    }
+  });
 }
 
 async function showSystemNotificationNow(title, bodyText) {
   const perm = await getNotifPermissionState();
-  if (perm !== "granted") {
-    console.warn("Notification permission is not granted:", perm);
-    return false;
-  }
+  if (perm !== "granted") return false;
 
   const options = {
     body: bodyText,
@@ -190,9 +223,7 @@ async function showSystemNotificationNow(title, bodyText) {
         await reg.showNotification(title, options);
         return true;
       }
-    } catch (e) {
-      console.warn("SW showNotification failed, fallback to Notification API:", e);
-    }
+    } catch (e) {}
   }
 
   try {
@@ -205,9 +236,7 @@ async function showSystemNotificationNow(title, bodyText) {
       };
       return true;
     }
-  } catch (e) {
-    console.error("Notification API error:", e);
-  }
+  } catch (e) {}
 
   return false;
 }
@@ -224,6 +253,7 @@ async function updateNotifUI() {
   if (perm === "granted") {
     if (banner) banner.style.display = "none";
     if (btn) btn.classList.add("active-notif");
+    await registerFcmTokenIfPossible();
   } else if (perm === "default") {
     if (banner) banner.style.display = "flex";
   } else {
@@ -240,17 +270,8 @@ window.requestNotifPermission = async () => {
   await updateNotifUI();
   if (perm === "granted") {
     playNotificationTone(true);
-    const ok = await showSystemNotificationNow("BROKIN Chat", "تم تفعيل الإشعارات بنجاح 🔔");
-    if (!ok) {
-      alert("تم منح الإذن لكن النظام لم يعرض الإشعار؛ تأكد من إشعارات المتصفح/الـ PWA في إعدادات الجهاز");
-    }
-  } else if (perm === "denied") {
-    alert("الإشعارات مرفوضة حالياً؛ فعّلها من إعدادات المتصفح أو التطبيق في الجهاز");
+    await showSystemNotificationNow("BROKIN Chat", "تم تفعيل الإشعارات بنجاح 🔔");
   }
-};
-
-window.testLocalNotification = async () => {
-  return await showSystemNotificationNow("اختبار BROKIN", "رسالة اختبار خارج المحادثة");
 };
 
 // تسجيل الدخول والخروج
@@ -377,7 +398,6 @@ function loadMessages() {
       const data = docSnap.data();
       const docId = docSnap.id;
 
-      // تجاهل الرسائل المخفية لهذا المستخدم
       if (Array.isArray(data.hiddenFor) && data.hiddenFor.includes(currentUser.uid)) {
         if (!knownMessageIds.has(docId)) {
           knownMessageIds.add(docId);
@@ -484,7 +504,6 @@ function loadMessages() {
       persistSeenIds();
     }
 
-    // تحديث معاينة آخر رسالة في واجهة ما قبل المحادثة
     const previewEl = document.getElementById("lastMsgPreview");
     const timeEl = document.getElementById("lastMsgTime");
     if (lastVisibleMsg) {

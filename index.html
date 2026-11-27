@@ -63,8 +63,6 @@
     .modal-btn.warn { background: #37474f; color: #fff; }
     .modal-btn.danger { background: #d32f2f; color: #fff; }
     .modal-btn.cancel { background: transparent; color: #8696a0; }
-
-    /* عارض الصور والفيديو داخل المحادثة */
     .lightbox-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.92);
       display: none; flex-direction: column; align-items: center; justify-content: center;
@@ -96,7 +94,7 @@
 </head>
 <body>
 
-  <div id="login-screen" class="screen center-screen">
+  <div id="login-screen" class="screen center-screen" style="display: none;">
     <div class="auth-card">
       <h2>BROKIN Chat</h2>
       <input type="email" id="email" placeholder="البريد الإلكتروني" autocomplete="email" />
