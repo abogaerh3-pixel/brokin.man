@@ -45,6 +45,34 @@ let isChatOpen = false;
 let isInitialLoad = true;
 let knownMessageIds = new Set();
 let unreadCount = 0;
+let unsubscribeMessages = null;
+
+function getSeenStorageKey() {
+  return currentUser ? `brokin_seen_msgs_${currentUser.uid}` : null;
+}
+
+function loadPersistedSeenIds() {
+  knownMessageIds = new Set();
+  const key = getSeenStorageKey();
+  if (!key) return;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) {
+      knownMessageIds = new Set(arr.slice(-300));
+    }
+  } catch (e) {}
+}
+
+function persistSeenIds() {
+  const key = getSeenStorageKey();
+  if (!key) return;
+  try {
+    const arr = Array.from(knownMessageIds).slice(-300);
+    localStorage.setItem(key, JSON.stringify(arr));
+  } catch (e) {}
+}
 
 // عارض الصور والفيديو داخل المحادثة
 window.openMediaLightbox = (type, url) => {
@@ -128,40 +156,44 @@ async function getNotifPermissionState() {
   if ("Notification" in window) {
     return Notification.permission;
   }
-  if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+  if ("serviceWorker" in navigator) {
     try {
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await navigator.serviceWorker.getRegistration();
       if (reg && reg.pushManager) {
-        const status = await reg.pushManager.permissionState({ userVisibleOnly: true });
-        return status;
+        return await reg.pushManager.permissionState({ userVisibleOnly: true });
       }
     } catch (e) {}
   }
   return "unsupported";
 }
 
-async function triggerBrowserNotification(title, bodyText) {
+async function showSystemNotificationNow(title, bodyText) {
   const perm = await getNotifPermissionState();
-  if (perm !== "granted") return;
+  if (perm !== "granted") {
+    console.warn("Notification permission is not granted:", perm);
+    return false;
+  }
 
   const options = {
     body: bodyText,
     icon: "./icon-192.png",
     badge: "./icon-192.png",
-    tag: "brokin-new-msg",
+    tag: "brokin-new-msg-" + Date.now(),
     renotify: true,
     vibrate: [120, 60, 120]
   };
 
-  try {
-    if ("serviceWorker" in navigator) {
-      const reg = await navigator.serviceWorker.ready;
+  if ("serviceWorker" in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
       if (reg && typeof reg.showNotification === "function") {
         await reg.showNotification(title, options);
-        return;
+        return true;
       }
+    } catch (e) {
+      console.warn("SW showNotification failed, fallback to Notification API:", e);
     }
-  } catch (e) {}
+  }
 
   try {
     if ("Notification" in window) {
@@ -171,8 +203,17 @@ async function triggerBrowserNotification(title, bodyText) {
         window.openChat();
         notif.close();
       };
+      return true;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error("Notification API error:", e);
+  }
+
+  return false;
+}
+
+async function triggerBrowserNotification(title, bodyText) {
+  return await showSystemNotificationNow(title, bodyText);
 }
 
 async function updateNotifUI() {
@@ -199,8 +240,17 @@ window.requestNotifPermission = async () => {
   await updateNotifUI();
   if (perm === "granted") {
     playNotificationTone(true);
-    await triggerBrowserNotification("BROKIN Chat", "تم تفعيل الإشعارات بنجاح 🔔");
+    const ok = await showSystemNotificationNow("BROKIN Chat", "تم تفعيل الإشعارات بنجاح 🔔");
+    if (!ok) {
+      alert("تم منح الإذن لكن النظام لم يعرض الإشعار؛ تأكد من إشعارات المتصفح/الـ PWA في إعدادات الجهاز");
+    }
+  } else if (perm === "denied") {
+    alert("الإشعارات مرفوضة حالياً؛ فعّلها من إعدادات المتصفح أو التطبيق في الجهاز");
   }
+};
+
+window.testLocalNotification = async () => {
+  return await showSystemNotificationNow("اختبار BROKIN", "رسالة اختبار خارج المحادثة");
 };
 
 // تسجيل الدخول والخروج
@@ -215,6 +265,10 @@ window.login = async () => {
 };
 
 window.logoutUser = async () => {
+  if (unsubscribeMessages) {
+    unsubscribeMessages();
+    unsubscribeMessages = null;
+  }
   await signOut(auth);
   location.reload();
 };
@@ -252,6 +306,8 @@ function updateUnreadBadge() {
 onAuthStateChanged(auth, (user) => {
   if (user) {
     currentUser = user;
+    isInitialLoad = true;
+    loadPersistedSeenIds();
     document.getElementById("userEmailDisplay").innerText = user.email || "مستخدم مصرح";
     document.getElementById("login-screen").style.display = "none";
     document.getElementById("lobby-screen").style.display = "block";
@@ -265,6 +321,7 @@ onAuthStateChanged(auth, (user) => {
       window.history.replaceState({}, "", "./");
     }
   } else {
+    currentUser = null;
     document.getElementById("login-screen").style.display = "flex";
     document.getElementById("lobby-screen").style.display = "none";
     document.getElementById("chat-screen").style.display = "none";
@@ -304,41 +361,50 @@ function getPreviewLabel(data) {
 
 // الاستماع للرسائل وتحديث الواجهة والإشعارات
 function loadMessages() {
+  if (unsubscribeMessages) {
+    unsubscribeMessages();
+  }
+
   const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
   const messagesDiv = document.getElementById("messages");
 
-  onSnapshot(q, (snapshot) => {
+  unsubscribeMessages = onSnapshot(q, async (snapshot) => {
     messagesDiv.innerHTML = "";
     let lastVisibleMsg = null;
+    let seenChanged = false;
 
-    snapshot.forEach((docSnap) => {
+    for (const docSnap of snapshot.docs) {
       const data = docSnap.data();
       const docId = docSnap.id;
 
       // تجاهل الرسائل المخفية لهذا المستخدم
       if (Array.isArray(data.hiddenFor) && data.hiddenFor.includes(currentUser.uid)) {
-        knownMessageIds.add(docId);
-        return;
+        if (!knownMessageIds.has(docId)) {
+          knownMessageIds.add(docId);
+          seenChanged = true;
+        }
+        continue;
       }
 
       lastVisibleMsg = data;
 
-      // فحص إذا كانت رسالة جديدة وصلت بعد فتح التطبيق
-      if (!isInitialLoad && !knownMessageIds.has(docId)) {
-        const isFromOther = data.uid !== currentUser.uid;
-        if (isFromOther) {
-          const isOutsideChat = !isChatOpen || document.hidden;
-          if (isOutsideChat) {
-            playNotificationTone(true);
-            triggerBrowserNotification("رسالة جديدة في BROKIN", getPreviewLabel(data));
-            unreadCount++;
-            updateUnreadBadge();
-          }
-        } else {
+      const isAlreadyKnown = knownMessageIds.has(docId);
+      const isFromOther = data.uid !== currentUser.uid;
+      const isOutsideChat = !isChatOpen || document.hidden;
+
+      if (!isAlreadyKnown) {
+        knownMessageIds.add(docId);
+        seenChanged = true;
+
+        if (!isInitialLoad && isFromOther && isOutsideChat) {
+          playNotificationTone(true);
+          await triggerBrowserNotification("رسالة جديدة في BROKIN", getPreviewLabel(data));
+          unreadCount++;
+          updateUnreadBadge();
+        } else if (!isInitialLoad && !isFromOther) {
           playNotificationTone(false);
         }
       }
-      knownMessageIds.add(docId);
 
       const div = document.createElement("div");
       div.className = "msg " + (data.uid === currentUser.uid ? "me" : "other");
@@ -412,7 +478,11 @@ function loadMessages() {
       div.appendChild(timeSpan);
 
       messagesDiv.appendChild(div);
-    });
+    }
+
+    if (seenChanged) {
+      persistSeenIds();
+    }
 
     // تحديث معاينة آخر رسالة في واجهة ما قبل المحادثة
     const previewEl = document.getElementById("lastMsgPreview");
