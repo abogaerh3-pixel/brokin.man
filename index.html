@@ -262,3 +262,29 @@
   <div id="chatScreen" class="screen">
     <div class="top-bar">
       <div class="brand">
+        <span>BROKIN Chat</span>
+        <span id="unreadBadge">0</span>
+      </div>
+      <button id="logoutBtn" type="button">خروج</button>
+    </div>
+
+    <div id="messages"></div>
+
+    <div class="composer">
+      <input id="mediaInput" type="file" accept="image/*,video/*,audio/*" style="display:none" />
+      <button id="attachBtn" class="icon-btn" type="button" onclick="document.getElementById('mediaInput').click()">📎</button>
+      <button id="recordBtn" class="icon-btn" type="button">🎤</button>
+      <input id="messageInput" type="text" placeholder="اكتب رسالة..." autocomplete="off" />
+      <button id="sendBtn" type="button">إرسال</button>
+    </div>
+  </div>
+
+  <div id="mediaLightbox" onclick="window.closeMediaLightbox()">
+    <button id="closeLightboxBtn" type="button" onclick="event.stopPropagation(); window.closeMediaLightbox()">إغلاق</button>
+    <div id="lightboxStage"></div>
+    <div id="lightboxLabel"></div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
