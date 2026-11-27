@@ -117,9 +117,26 @@ function playNotificationTone(isIncoming = true) {
   } catch (e) {}
 }
 
-// إظهار إشعار عبر Service Worker عند الإمكان مع fallback لـ Notification
+// فحص حالة الإشعارات وعرضها بشكل متوافق مع PWA و Safari
+async function getNotifPermissionState() {
+  if ("Notification" in window) {
+    return Notification.permission;
+  }
+  if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg && reg.pushManager) {
+        const status = await reg.pushManager.permissionState({ userVisibleOnly: true });
+        return status;
+      }
+    } catch (e) {}
+  }
+  return "unsupported";
+}
+
 async function triggerBrowserNotification(title, bodyText) {
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const perm = await getNotifPermissionState();
+  if (perm !== "granted") return;
 
   const options = {
     body: bodyText,
@@ -141,37 +158,39 @@ async function triggerBrowserNotification(title, bodyText) {
   } catch (e) {}
 
   try {
-    const notif = new Notification(title, options);
-    notif.onclick = () => {
-      window.focus();
-      window.openChat();
-      notif.close();
-    };
+    if ("Notification" in window) {
+      const notif = new Notification(title, options);
+      notif.onclick = () => {
+        window.focus();
+        window.openChat();
+        notif.close();
+      };
+    }
   } catch (e) {}
 }
 
-function updateNotifUI() {
+async function updateNotifUI() {
   const banner = document.getElementById("notifBanner");
   const btn = document.getElementById("notifBtn");
-  if (!("Notification" in window)) {
-    if (banner) banner.style.display = "none";
-    return;
-  }
-  if (Notification.permission === "granted") {
+  const perm = await getNotifPermissionState();
+
+  if (perm === "granted") {
     if (banner) banner.style.display = "none";
     if (btn) btn.classList.add("active-notif");
-  } else if (Notification.permission === "default") {
+  } else if (perm === "default") {
     if (banner) banner.style.display = "flex";
+  } else {
+    if (banner) banner.style.display = "none";
   }
 }
 
 window.requestNotifPermission = async () => {
   if (!("Notification" in window)) {
-    alert("متصفحك لا يدعم إشعارات النظام");
+    alert("على الآيفون، ثبّت التطبيق على الشاشة الرئيسية عبر مشاركة ثم إضافة إلى الشاشة الرئيسية لتفعيل الإشعارات");
     return;
   }
   const perm = await Notification.requestPermission();
-  updateNotifUI();
+  await updateNotifUI();
   if (perm === "granted") {
     playNotificationTone(true);
     await triggerBrowserNotification("BROKIN Chat", "تم تفعيل الإشعارات بنجاح 🔔");
@@ -365,165 +384,3 @@ function loadMessages() {
         expandBtn.title = "فتح الفيديو في العارض";
         expandBtn.onclick = (e) => {
           e.stopPropagation();
-          vid.pause();
-          window.openMediaLightbox("video", data.url);
-        };
-
-        wrap.appendChild(vid);
-        wrap.appendChild(expandBtn);
-        div.appendChild(wrap);
-      }
-      if (data.type === "audio" && data.url) {
-        const aud = document.createElement("audio");
-        aud.src = data.url;
-        aud.controls = true;
-        div.appendChild(aud);
-      }
-
-      const timeSpan = document.createElement("span");
-      timeSpan.className = "msg-meta";
-      timeSpan.textContent = formatTime(data.createdAt);
-      div.appendChild(timeSpan);
-
-      messagesDiv.appendChild(div);
-    });
-
-    // تحديث معاينة آخر رسالة في واجهة ما قبل المحادثة
-    const previewEl = document.getElementById("lastMsgPreview");
-    const timeEl = document.getElementById("lastMsgTime");
-    if (lastVisibleMsg) {
-      previewEl.textContent = (lastVisibleMsg.uid === currentUser.uid ? "أنت: " : "") + getPreviewLabel(lastVisibleMsg);
-      timeEl.textContent = formatTime(lastVisibleMsg.createdAt) || "الآن";
-    } else {
-      previewEl.textContent = "لا توجد رسائل بعد...";
-      timeEl.textContent = "--:--";
-    }
-
-    isInitialLoad = false;
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-  });
-}
-
-// نافذة وخيارات حذف المحادثة
-window.openDeleteModal = () => {
-  document.getElementById("deleteModal").style.display = "flex";
-};
-
-window.closeDeleteModal = () => {
-  document.getElementById("deleteModal").style.display = "none";
-};
-
-window.confirmDeleteChat = async (mode) => {
-  closeDeleteModal();
-  if (!currentUser) return;
-  try {
-    const snap = await getDocs(collection(db, "messages"));
-    if (snap.empty) return;
-
-    const batch = writeBatch(db);
-    let hasChanges = false;
-
-    snap.forEach((docSnap) => {
-      const data = docSnap.data();
-      if (mode === "both") {
-        batch.delete(docSnap.ref);
-        hasChanges = true;
-      } else if (mode === "self") {
-        if (!Array.isArray(data.hiddenFor) || !data.hiddenFor.includes(currentUser.uid)) {
-          batch.update(docSnap.ref, {
-            hiddenFor: arrayUnion(currentUser.uid)
-          });
-          hasChanges = true;
-        }
-      }
-    });
-
-    if (hasChanges) {
-      await batch.commit();
-    }
-  } catch (e) {
-    console.error("Delete chat error:", e);
-    alert("تعذر حذف المحادثة، تحقق من صلاحيات Firestore");
-  }
-};
-
-// إرسال نص
-window.sendText = async () => {
-  const input = document.getElementById("msgInput");
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = "";
-
-  await addDoc(collection(db, "messages"), {
-    type: "text",
-    text: text,
-    uid: currentUser.uid,
-    createdAt: serverTimestamp()
-  });
-};
-
-// إرسال صورة أو فيديو
-window.sendMedia = async (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-  const isVideo = file.type.startsWith("video/");
-  const ext = (file.name.split(".").pop() || (isVideo ? "mp4" : "jpg")).toLowerCase();
-
-  try {
-    const url = await uploadToSupabase(file, ext);
-    await addDoc(collection(db, "messages"), {
-      type: isVideo ? "video" : "image",
-      url: url,
-      uid: currentUser.uid,
-      createdAt: serverTimestamp()
-    });
-  } catch (e) {
-    alert("تعذر إرسال الملف، تأكد من إعدادات التخزين");
-  }
-  event.target.value = "";
-};
-
-// تسجيل وإرسال بصمة صوتية
-window.toggleRecord = async () => {
-  const micBtn = document.getElementById("micBtn");
-
-  if (!isRecording) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunks.push(e.data);
-      };
-
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const mime = mediaRecorder.mimeType || "audio/webm";
-        const ext = mime.includes("mp4") ? "m4a" : "webm";
-        const blob = new Blob(audioChunks, { type: mime });
-        try {
-          const url = await uploadToSupabase(blob, ext);
-          await addDoc(collection(db, "messages"), {
-            type: "audio",
-            url: url,
-            uid: currentUser.uid,
-            createdAt: serverTimestamp()
-          });
-        } catch (e) {
-          alert("تعذر إرسال البصمة الصوتية");
-        }
-      };
-
-      mediaRecorder.start();
-      isRecording = true;
-      micBtn.classList.add("recording");
-    } catch (e) {
-      alert("يرجى السماح بالوصول إلى الميكروفون");
-    }
-  } else {
-    mediaRecorder.stop();
-    isRecording = false;
-    micBtn.classList.remove("recording");
-  }
-};
