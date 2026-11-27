@@ -1,9 +1,9 @@
-const CACHE_NAME = 'brokin-chat-v1';
+const CACHE_NAME = 'brokin-chat-v2';
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/app.js',
-  '/manifest.json'
+  './',
+  './index.html',
+  './app.js',
+  './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {

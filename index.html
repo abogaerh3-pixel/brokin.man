@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#0f172a">
   <title>BROKIN Chat</title>
-  <link rel="manifest" href="/manifest.json">
+  <link rel="manifest" href="./manifest.json">
   <style>
     * { box-sizing: border-box; }
     body {
@@ -61,13 +61,32 @@
       height: 100dvh;
     }
     header {
-      padding: 14px 16px;
+      padding: 12px 16px;
       background: #1e293b;
       border-bottom: 1px solid #334155;
       font-weight: 700;
       font-size: 17px;
       position: relative;
       z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .delete-btn {
+      padding: 7px 11px;
+      font-size: 13px;
+      background: #334155;
+      color: #fca5a5;
+      border-radius: 8px;
+    }
+    .delete-btn:hover {
+      background: #7f1d1d;
+      color: #ffffff;
     }
     #messages {
       flex: 1;
@@ -76,6 +95,39 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
+    }
+    .msg {
+      max-width: 78%;
+      padding: 9px 13px;
+      border-radius: 12px;
+      font-size: 15px;
+      line-height: 1.45;
+      word-wrap: break-word;
+    }
+    .msg p { margin: 0; }
+    .msg.me {
+      align-self: flex-start;
+      background: #065f46;
+      color: #ecfdf5;
+      border-bottom-right-radius: 3px;
+    }
+    .msg.other {
+      align-self: flex-end;
+      background: #1e293b;
+      color: #f8fafc;
+      border-bottom-left-radius: 3px;
+    }
+    .msg img, .msg video {
+      max-width: 100%;
+      border-radius: 8px;
+      display: block;
+    }
+    .msg audio {
+      max-width: 230px;
+    }
+    #micBtn.recording {
+      background: #dc2626 !important;
+      color: #ffffff !important;
     }
     footer {
       display: flex;
@@ -91,6 +143,56 @@
       padding: 10px 12px;
       background: #334155;
       color: #f8fafc;
+    }
+
+    /* نافذة خيارات حذف المحادثة */
+    #delete-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.75);
+      z-index: 50;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    #delete-modal.active {
+      display: flex;
+    }
+    .modal-box {
+      width: 100%;
+      max-width: 340px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .modal-box h3 {
+      margin: 0 0 4px;
+      font-size: 17px;
+      text-align: center;
+    }
+    .modal-box p {
+      margin: 0 0 6px;
+      font-size: 13px;
+      color: #cbd5e1;
+      text-align: center;
+    }
+    .opt-self {
+      background: #334155;
+      color: #f8fafc;
+    }
+    .opt-both {
+      background: #dc2626;
+      color: #ffffff;
+    }
+    .opt-cancel {
+      background: transparent;
+      color: #94a3b8;
+      border: 1px solid #334155;
     }
 
     /* نقل شارة Netlify إلى أعلى اليسار بعيداً عن الكتابة */
@@ -119,7 +221,12 @@
   </div>
 
   <div id="chat-screen">
-    <header>محادثة خاصة 🔒</header>
+    <header>
+      <span>محادثة خاصة 🔒</span>
+      <div class="header-actions">
+        <button class="delete-btn" title="حذف المحادثة" onclick="openDeleteModal()">🗑️ حذف</button>
+      </div>
+    </header>
     <div id="messages"></div>
     <footer>
       <input type="file" id="mediaInput" accept="image/*,video/*" hidden onchange="sendMedia(event)">
@@ -130,15 +237,43 @@
     </footer>
   </div>
 
-  <script type="module" src="app.js"></script>
+  <!-- نافذة تأكيد واختيار حذف المحادثة -->
+  <div id="delete-modal" onclick="if(event.target===this) closeDeleteModal()">
+    <div class="modal-box">
+      <h3>حذف المحادثة</h3>
+      <p>اختر نوع الحذف المطلوب:</p>
+      <button class="opt-self" onclick="confirmDeleteChat('self')">حذف من عندي فقط</button>
+      <button class="opt-both" onclick="confirmDeleteChat('both')">حذف للطرفين</button>
+      <button class="opt-cancel" onclick="closeDeleteModal()">إلغاء</button>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
   <script>
+    function openDeleteModal() {
+      document.getElementById('delete-modal').classList.add('active');
+    }
+    function closeDeleteModal() {
+      document.getElementById('delete-modal').classList.remove('active');
+    }
+    function confirmDeleteChat(mode) {
+      const label = mode === 'both' ? 'للطرفين' : 'من عندك فقط';
+      if (!confirm(`هل أنت متأكد من حذف المحادثة ${label}؟`)) return;
+      closeDeleteModal();
+      if (typeof window.handleDeleteChat === 'function') {
+        window.handleDeleteChat(mode);
+      } else {
+        document.getElementById('messages').innerHTML = '';
+      }
+    }
+
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch((err) => {
+        navigator.serviceWorker.register('./sw.js').catch((err) => {
           console.error('Service Worker error:', err);
         });
       });
     }
   </script>
 </body>
-</html>س
+</html>

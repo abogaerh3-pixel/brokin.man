@@ -1,6 +1,17 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  orderBy,
+  onSnapshot,
+  serverTimestamp,
+  writeBatch,
+  arrayUnion
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // بيانات Supabase Storage للملفات المجانية (نضيفها بعد الرفع والتجربة)
 const SUPABASE_URL = "https://YOUR_PROJECT_REF.supabase.co";
@@ -66,8 +77,14 @@ function loadMessages() {
 
   onSnapshot(q, (snapshot) => {
     messagesDiv.innerHTML = "";
-    snapshot.forEach((doc) => {
-      const data = doc.data();
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+
+      // تجاهل الرسائل التي حذفها المستخدم الحالي من عنده فقط
+      if (Array.isArray(data.hiddenFor) && data.hiddenFor.includes(currentUser.uid)) {
+        return;
+      }
+
       const div = document.createElement("div");
       div.className = "msg " + (data.uid === currentUser.uid ? "me" : "other");
 
@@ -100,6 +117,40 @@ function loadMessages() {
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
   });
 }
+
+// دالة حذف المحادثة (self = من عندي فقط | both = للطرفين)
+window.handleDeleteChat = async (mode) => {
+  if (!currentUser) return;
+  try {
+    const snap = await getDocs(collection(db, "messages"));
+    if (snap.empty) return;
+
+    const batch = writeBatch(db);
+    let hasChanges = false;
+
+    snap.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (mode === "both") {
+        batch.delete(docSnap.ref);
+        hasChanges = true;
+      } else if (mode === "self") {
+        if (!Array.isArray(data.hiddenFor) || !data.hiddenFor.includes(currentUser.uid)) {
+          batch.update(docSnap.ref, {
+            hiddenFor: arrayUnion(currentUser.uid)
+          });
+          hasChanges = true;
+        }
+      }
+    });
+
+    if (hasChanges) {
+      await batch.commit();
+    }
+  } catch (e) {
+    console.error("Delete chat error:", e);
+    alert("تعذر حذف المحادثة، تحقق من صلاحيات Firestore");
+  }
+};
 
 window.sendText = async () => {
   const input = document.getElementById("msgInput");
