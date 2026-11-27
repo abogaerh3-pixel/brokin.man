@@ -1,7 +1,8 @@
 {
   "name": "محادثتنا الخاصة",
   "short_name": "محادثتي",
-  "start_url": "/index.html",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0b141a",
   "theme_color": "#008069",
