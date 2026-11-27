@@ -13,9 +13,9 @@ import {
   arrayUnion
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// بيانات Supabase Storage للملفات المجانية (نضيفها بعد الرفع والتجربة)
-const SUPABASE_URL = "https://YOUR_PROJECT_REF.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+// بيانات Supabase Storage للملفات المجانية
+const SUPABASE_URL = "https://ihajjvjupakohnovwvem.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_6MFGRFQLtoll_RsADVLpXw_EPAB-80h";
 const SUPABASE_BUCKET = "media";
 
 const firebaseConfig = {
