@@ -2,197 +2,263 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BROKIN Chat</title>
-  <meta name="theme-color" content="#0b141a" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="icon" type="image/png" href="./icon-192.png" />
-  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <meta name="theme-color" content="#0b0f17" />
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
-    html, body { height: 100%; background: #0b141a; color: #e9edef; overflow: hidden; }
-    .screen { width: 100%; height: 100dvh; max-width: 650px; margin: 0 auto; background: #111b21; }
-    .center-screen { display: flex; align-items: center; justify-content: center; padding: 20px; background: #0b141a; }
-    .auth-card { width: 100%; max-width: 380px; background: #111b21; border: 1px solid #2a3942; border-radius: 16px; padding: 24px; text-align: center; }
-    .auth-card h2 { margin-bottom: 16px; }
-    .auth-card input { width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 10px; border: 1px solid #2a3942; background: #1f2c34; color: #e9edef; font-size: 15px; outline: none; }
-    .primary-btn { width: 100%; padding: 12px; border: none; border-radius: 10px; background: #00a884; color: #fff; font-size: 16px; font-weight: 700; cursor: pointer; }
-    .error-text { color: #ff6b6b; font-size: 13px; margin-top: 10px; min-height: 18px; }
-    .top-bar, .chat-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: #1f2c34; border-bottom: 1px solid #2a3942; }
-    .top-actions, .chat-header-right { display: flex; align-items: center; gap: 10px; }
-    .icon-btn, .back-btn { background: rgba(255,255,255,0.08); border: none; color: #e9edef; width: 36px; height: 36px; border-radius: 10px; font-size: 17px; cursor: pointer; }
-    .icon-btn.active-notif { background: rgba(0,168,132,0.22); color: #00e6b8; }
-    .lobby-body { padding: 18px; display: flex; flex-direction: column; gap: 16px; }
-    .welcome-box { background: #1f2c34; border: 1px solid #2a3942; border-radius: 14px; padding: 14px; }
-    .welcome-box p { font-size: 12px; color: #8696a0; margin-bottom: 4px; }
-    .welcome-box h3 { font-size: 15px; color: #00a884; word-break: break-all; }
-    .chat-card { display: flex; align-items: center; gap: 12px; background: #1f2c34; border: 1px solid #2a3942; border-radius: 14px; padding: 14px; cursor: pointer; }
-    .chat-avatar { width: 48px; height: 48px; border-radius: 50%; background: rgba(0,168,132,0.18); display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
-    .chat-info { flex: 1; min-width: 0; }
-    .chat-info-top, .chat-info-bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .chat-info-top { margin-bottom: 5px; }
-    .msg-time, .last-preview { font-size: 12px; color: #8696a0; }
-    .last-preview { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .unread-badge { background: #00a884; color: #0b141a; font-weight: 800; font-size: 12px; padding: 2px 8px; border-radius: 999px; }
-    .notif-banner { background: rgba(0,168,132,0.14); border: 1px solid rgba(0,168,132,0.35); border-radius: 12px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
-    .notif-banner button { background: #00a884; color: #fff; border: none; padding: 6px 12px; border-radius: 8px; font-weight: 700; cursor: pointer; }
-    .chat-layout { display: flex; flex-direction: column; }
-    .messages-container { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: #0b141a; }
-    .msg { max-width: 80%; padding: 9px 12px; border-radius: 12px; font-size: 15px; line-height: 1.4; word-wrap: break-word; }
-    .msg.me { align-self: flex-start; background: #005c4b; }
-    .msg.other { align-self: flex-end; background: #202c33; }
-    .media-wrap { position: relative; display: inline-block; margin-top: 4px; }
-    .msg img, .msg video { max-width: 100%; max-height: 260px; border-radius: 8px; display: block; cursor: zoom-in; background: #000; }
-    .expand-media-btn {
-      position: absolute; top: 8px; left: 8px;
-      background: rgba(11, 20, 26, 0.78); color: #fff;
-      border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
-      padding: 4px 8px; font-size: 12px; cursor: pointer;
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0b0f17;
+      color: #f3f4f6;
+      height: 100dvh;
+      overflow: hidden;
     }
-    .msg audio { max-width: 230px; height: 36px; margin-top: 4px; }
-    .msg-meta { display: block; font-size: 10px; color: rgba(233,237,239,0.65); margin-top: 4px; }
-    .chat-input-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #1f2c34; border-top: 1px solid #2a3942; }
-    .attach-btn, .mic-btn, .send-btn { width: 40px; height: 40px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; flex-shrink: 0; }
-    .attach-btn, .mic-btn { background: rgba(255,255,255,0.08); color: #e9edef; }
-    .mic-btn.recording { background: #e53935; color: #fff; }
-    .send-btn { background: #00a884; color: #fff; }
-    #msgInput { flex: 1; padding: 10px 14px; border-radius: 20px; border: 1px solid #2a3942; background: #111b21; color: #e9edef; font-size: 15px; outline: none; }
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 100; }
-    .modal-box { width: 100%; max-width: 330px; background: #1f2c34; border: 1px solid #2a3942; border-radius: 16px; padding: 20px; text-align: center; display: flex; flex-direction: column; gap: 10px; }
-    .modal-btn { padding: 11px; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
-    .modal-btn.warn { background: #37474f; color: #fff; }
-    .modal-btn.danger { background: #d32f2f; color: #fff; }
-    .modal-btn.cancel { background: transparent; color: #8696a0; }
-    .lightbox-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.92);
-      display: none; flex-direction: column; align-items: center; justify-content: center;
-      padding: 16px; z-index: 200;
+    .screen {
+      width: 100%;
+      height: 100dvh;
+      display: none;
+      flex-direction: column;
     }
-    .lightbox-overlay.open { display: flex; }
-    .lightbox-top {
-      position: absolute; top: 14px; left: 14px; right: 14px;
-      display: flex; justify-content: space-between; align-items: center; z-index: 210;
+    #authScreen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: #0b0f17;
     }
-    .lightbox-close {
-      background: rgba(255,255,255,0.14); color: #fff; border: none;
-      width: 42px; height: 42px; border-radius: 50%; font-size: 20px; cursor: pointer;
+    .auth-card {
+      width: 100%;
+      max-width: 380px;
+      background: #141b29;
+      border: 1px solid #263248;
+      border-radius: 14px;
+      padding: 24px;
     }
-    .lightbox-stage {
-      width: 100%; max-width: 900px; max-height: 85dvh;
-      display: flex; align-items: center; justify-content: center; overflow: auto;
+    .auth-card h1 {
+      font-size: 20px;
+      margin-bottom: 16px;
+      text-align: center;
     }
-    .lightbox-stage img {
-      max-width: 100%; max-height: 84dvh; object-fit: contain;
-      border-radius: 10px; transition: transform 0.2s ease; cursor: zoom-in;
+    .auth-card input {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 12px;
+      border-radius: 10px;
+      border: 1px solid #2b3850;
+      background: #0d131f;
+      color: #fff;
+      font-size: 14px;
     }
-    .lightbox-stage img.zoomed { transform: scale(1.75); cursor: zoom-out; }
-    .lightbox-stage video {
-      width: 100%; max-width: 820px; max-height: 82dvh;
-      border-radius: 12px; background: #000;
+    .auth-card button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #authError {
+      color: #f87171;
+      font-size: 13px;
+      margin-top: 10px;
+      min-height: 18px;
+      text-align: center;
+    }
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: #141b29;
+      border-bottom: 1px solid #232e42;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 16px;
+    }
+    #unreadBadge {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: #ef4444;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    #logoutBtn {
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #f8fafc;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .msg-row {
+      display: flex;
+      width: 100%;
+    }
+    .msg-row.mine { justify-content: flex-start; }
+    .msg-row.other { justify-content: flex-end; }
+    .msg-bubble {
+      max-width: 78%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #1a2436;
+      border: 1px solid #28364f;
+      word-break: break-word;
+    }
+    .msg-row.mine .msg-bubble {
+      background: #1d4ed8;
+      border-color: #2563eb;
+    }
+    .msg-image {
+      max-width: 240px;
+      max-height: 280px;
+      border-radius: 8px;
+      display: block;
+      cursor: pointer;
+    }
+    .msg-video {
+      max-width: 260px;
+      max-height: 280px;
+      border-radius: 8px;
+      display: block;
+    }
+    .msg-audio {
+      max-width: 240px;
+      display: block;
+    }
+    .msg-text {
+      margin-top: 4px;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    .msg-meta {
+      margin-top: 4px;
+      font-size: 11px;
+      opacity: 0.7;
+      text-align: left;
+    }
+    .composer {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #141b29;
+      border-top: 1px solid #232e42;
+    }
+    #messageInput {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #2b3850;
+      background: #0d131f;
+      color: #fff;
+      font-size: 14px;
+    }
+    .icon-btn {
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #2b3850;
+      background: #1e293b;
+      color: #fff;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .icon-btn.recording {
+      background: #dc2626;
+      border-color: #ef4444;
+    }
+    #sendBtn {
+      padding: 10px 16px;
+      border-radius: 10px;
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #mediaLightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.92);
+      z-index: 999;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    #mediaLightbox.open { display: flex; }
+    #lightboxStage {
+      max-width: 100%;
+      max-height: 80dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: auto;
+    }
+    #lightboxStage img {
+      max-width: 100%;
+      max-height: 80dvh;
+      transition: transform 0.2s ease;
+    }
+    #lightboxStage img.zoomed { transform: scale(1.6); }
+    #lightboxStage video {
+      max-width: 100%;
+      max-height: 80dvh;
+    }
+    #lightboxLabel {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #cbd5e1;
+    }
+    #closeLightboxBtn {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: none;
+      background: #334155;
+      color: #fff;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-
-  <div id="login-screen" class="screen center-screen" style="display: none;">
-    <div class="auth-card">
-      <h2>BROKIN Chat</h2>
-      <input type="email" id="email" placeholder="البريد الإلكتروني" autocomplete="email" />
-      <input type="password" id="password" placeholder="كلمة المرور" autocomplete="current-password" />
-      <button class="primary-btn" onclick="login()">دخول</button>
-      <p id="error" class="error-text"></p>
-    </div>
+  <div id="authScreen" class="screen">
+    <form id="loginForm" class="auth-card">
+      <h1>تسجيل الدخول إلى BROKIN</h1>
+      <input id="emailInput" type="email" placeholder="البريد الإلكتروني" required />
+      <input id="passwordInput" type="password" placeholder="كلمة المرور" required />
+      <button type="submit">دخول</button>
+      <div id="authError"></div>
+    </form>
   </div>
 
-  <div id="lobby-screen" class="screen" style="display: none;">
-    <header class="top-bar">
-      <strong>BROKIN</strong>
-      <div class="top-actions">
-        <button id="notifBtn" class="icon-btn" onclick="requestNotifPermission()" title="تفعيل الإشعارات">🔔</button>
-        <button class="icon-btn" onclick="logoutUser()" title="تسجيل الخروج">🚪</button>
-      </div>
-    </header>
-
-    <main class="lobby-body">
-      <div class="welcome-box">
-        <p>مرحباً بك</p>
-        <h3 id="userEmailDisplay">المستخدم</h3>
-      </div>
-
-      <div class="chat-card" onclick="openChat()">
-        <div class="chat-avatar">💬</div>
-        <div class="chat-info">
-          <div class="chat-info-top">
-            <h4>المحادثة الخاصة</h4>
-            <span id="lastMsgTime" class="msg-time">--:--</span>
-          </div>
-          <div class="chat-info-bottom">
-            <p id="lastMsgPreview" class="last-preview">لا توجد رسائل بعد...</p>
-            <span id="unreadBadge" class="unread-badge" style="display: none;">0</span>
-          </div>
-        </div>
-      </div>
-
-      <button class="primary-btn" onclick="openChat()">دخول إلى المحادثة ←</button>
-
-      <div id="notifBanner" class="notif-banner" style="display: none;">
-        <span>فعّل الإشعارات لتصلك تنبيهات الرسائل.</span>
-        <button onclick="requestNotifPermission()">تفعيل</button>
-      </div>
-    </main>
-  </div>
-
-  <div id="chat-screen" class="screen chat-layout" style="display: none;">
-    <header class="chat-header">
-      <div class="chat-header-right">
-        <button class="back-btn" onclick="backToLobby()" title="رجوع">→</button>
-        <h3>المحادثة الخاصة</h3>
-      </div>
-      <button class="icon-btn" onclick="openDeleteModal()" title="حذف المحادثة">🗑️</button>
-    </header>
-
-    <div id="messages" class="messages-container"></div>
-
-    <footer class="chat-input-bar">
-      <label class="attach-btn" title="إرسال صورة أو فيديو">
-        📎
-        <input type="file" id="mediaInput" accept="image/*,video/*" onchange="sendMedia(event)" hidden />
-      </label>
-      <input type="text" id="msgInput" placeholder="اكتب رسالة..." onkeydown="if(event.key==='Enter') sendText()" />
-      <button id="micBtn" class="mic-btn" onclick="toggleRecord()" title="بصمة صوتية">🎤</button>
-      <button class="send-btn" onclick="sendText()" title="إرسال">➤</button>
-    </footer>
-  </div>
-
-  <div id="deleteModal" class="modal-overlay" style="display: none;" onclick="if(event.target===this) closeDeleteModal()">
-    <div class="modal-box">
-      <h3>حذف المحادثة</h3>
-      <button class="modal-btn warn" onclick="confirmDeleteChat('self')">حذف من عندي فقط</button>
-      <button class="modal-btn danger" onclick="confirmDeleteChat('both')">حذف للطرفين نهائياً</button>
-      <button class="modal-btn cancel" onclick="closeDeleteModal()">إلغاء</button>
-    </div>
-  </div>
-
-  <div id="mediaLightbox" class="lightbox-overlay" onclick="if(event.target===this || event.target.classList.contains('lightbox-stage')) closeMediaLightbox()">
-    <div class="lightbox-top">
-      <span id="lightboxLabel" style="font-size:13px;color:#cfd8dc;">معاينة الوسائط</span>
-      <button class="lightbox-close" onclick="closeMediaLightbox()" title="إغلاق">✕</button>
-    </div>
-    <div id="lightboxStage" class="lightbox-stage"></div>
-  </div>
-
-  <script>
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js").catch(() => {});
-      });
-      navigator.serviceWorker.addEventListener("message", (event) => {
-        if (event.data && event.data.type === "OPEN_CHAT" && typeof window.openChat === "function") {
-          window.openChat();
-        }
-      });
-    }
-  </script>
-  <script type="module" src="./app.js"></script>
-</body>
-</html>
+  <div id="chatScreen" class="screen">
+    <div class="top-bar">
+      <div class="brand">
