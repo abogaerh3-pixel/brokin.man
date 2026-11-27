@@ -147,4 +147,110 @@ function playNotificationTone(isIncoming = true) {
   } catch (e) {}
 
   try {
-    const AudioCtx =
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(isIncoming ? 880 : 660, ctx.currentTime);
+
+    gain.gain.setValueAtTime(0.001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.24);
+    osc.onended = () => {
+      ctx.close().catch(() => {});
+    };
+  } catch (e) {}
+}
+
+// طلب إذن الإشعارات وحفظ FCM Token للمستخدم الحالي
+async function registerPushToken() {
+  try {
+    if (!currentUser || !messaging || !("Notification" in window)) return;
+    if (!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY.includes("ضع_مفتاح")) return;
+
+    let permission = Notification.permission;
+    if (permission === "default") {
+      permission = await Notification.requestPermission();
+    }
+    if (permission !== "granted") return;
+
+    const swRegistration = await navigator.serviceWorker.ready;
+    const token = await getToken(messaging, {
+      vapidKey: VAPID_PUBLIC_KEY,
+      serviceWorkerRegistration: swRegistration
+    });
+
+    if (token) {
+      const tokenDocId = `${currentUser.uid}_${btoa(token).slice(-24).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+      await setDoc(
+        doc(db, "fcmTokens", tokenDocId),
+        {
+          uid: currentUser.uid,
+          email: currentUser.email || "",
+          token,
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
+  } catch (err) {
+    console.warn("FCM token registration skipped/failed:", err);
+  }
+}
+
+// استقبال الإشعارات والتطبيق مفتوح في المقدمة
+if (messaging) {
+  onMessage(messaging, (payload) => {
+    try {
+      const title = payload?.notification?.title || "رسالة جديدة في BROKIN";
+      const body = payload?.notification?.body || "لديك رسالة جديدة";
+      if (!isChatOpen) {
+        playNotificationTone(true);
+      }
+      if (Notification.permission === "granted" && document.hidden) {
+        new Notification(title, {
+          body,
+          icon: "./icon-192.png"
+        });
+      }
+    } catch (e) {}
+  });
+}
+
+// رفع ملف إلى Supabase Storage وإرجاع الرابط العام
+async function uploadToSupabase(file, folder = "uploads") {
+  const safeName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  const objectPath = `${folder}/${safeName}`;
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${objectPath}`;
+
+  const res = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": file.type || "application/octet-stream",
+      "x-upsert": "true"
+    },
+    body: file
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`فشل رفع الملف إلى Supabase (${res.status}): ${errText}`);
+  }
+
+  return `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${objectPath}`;
+}
+
+// عرض رسالة واحدة داخل واجهة المحادثة
+function renderMessage(docId, msg) {
+  const messagesEl = document.getElementById("messages");
