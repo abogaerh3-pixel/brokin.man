@@ -46,6 +46,56 @@ let isInitialLoad = true;
 let knownMessageIds = new Set();
 let unreadCount = 0;
 
+// عارض الصور والفيديو داخل المحادثة
+window.openMediaLightbox = (type, url) => {
+  const overlay = document.getElementById("mediaLightbox");
+  const stage = document.getElementById("lightboxStage");
+  const label = document.getElementById("lightboxLabel");
+  if (!overlay || !stage || !url) return;
+
+  stage.innerHTML = "";
+  if (type === "image") {
+    label.textContent = "اضغط على الصورة للتكبير أو التصغير";
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "صورة";
+    img.onclick = (e) => {
+      e.stopPropagation();
+      img.classList.toggle("zoomed");
+    };
+    stage.appendChild(img);
+  } else if (type === "video") {
+    label.textContent = "مشغل الفيديو";
+    const vid = document.createElement("video");
+    vid.src = url;
+    vid.controls = true;
+    vid.autoplay = true;
+    vid.playsInline = true;
+    stage.appendChild(vid);
+  }
+
+  overlay.classList.add("open");
+};
+
+window.closeMediaLightbox = () => {
+  const overlay = document.getElementById("mediaLightbox");
+  const stage = document.getElementById("lightboxStage");
+  if (stage) {
+    const vid = stage.querySelector("video");
+    if (vid) {
+      vid.pause();
+      vid.removeAttribute("src");
+      vid.load();
+    }
+    stage.innerHTML = "";
+  }
+  if (overlay) overlay.classList.remove("open");
+};
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") window.closeMediaLightbox();
+});
+
 // صوت تنبيه خفيف عند وصول رسالة أو إرسالها
 function playNotificationTone(isIncoming = true) {
   try {
@@ -67,24 +117,37 @@ function playNotificationTone(isIncoming = true) {
   } catch (e) {}
 }
 
-// إظهار إشعار المتصفح / النظام
-function triggerBrowserNotification(title, bodyText) {
-  if (!("Notification" in window)) return;
-  if (Notification.permission === "granted") {
-    try {
-      const notif = new Notification(title, {
-        body: bodyText,
-        icon: "./icon-192.png",
-        badge: "./icon-192.png",
-        tag: "brokin-new-msg"
-      });
-      notif.onclick = () => {
-        window.focus();
-        window.openChat();
-        notif.close();
-      };
-    } catch (e) {}
-  }
+// إظهار إشعار عبر Service Worker عند الإمكان مع fallback لـ Notification
+async function triggerBrowserNotification(title, bodyText) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+  const options = {
+    body: bodyText,
+    icon: "./icon-192.png",
+    badge: "./icon-192.png",
+    tag: "brokin-new-msg",
+    renotify: true,
+    vibrate: [120, 60, 120]
+  };
+
+  try {
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg && typeof reg.showNotification === "function") {
+        await reg.showNotification(title, options);
+        return;
+      }
+    }
+  } catch (e) {}
+
+  try {
+    const notif = new Notification(title, options);
+    notif.onclick = () => {
+      window.focus();
+      window.openChat();
+      notif.close();
+    };
+  } catch (e) {}
 }
 
 function updateNotifUI() {
@@ -111,7 +174,7 @@ window.requestNotifPermission = async () => {
   updateNotifUI();
   if (perm === "granted") {
     playNotificationTone(true);
-    triggerBrowserNotification("BROKIN Chat", "تم تفعيل الإشعارات بنجاح 🔔");
+    await triggerBrowserNotification("BROKIN Chat", "تم تفعيل الإشعارات بنجاح 🔔");
   }
 };
 
@@ -170,6 +233,12 @@ onAuthStateChanged(auth, (user) => {
     document.getElementById("chat-screen").style.display = "none";
     updateNotifUI();
     loadMessages();
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("openChat") === "1") {
+      window.openChat();
+      window.history.replaceState({}, "", "./");
+    }
   } else {
     document.getElementById("login-screen").style.display = "flex";
     document.getElementById("lobby-screen").style.display = "none";
@@ -254,17 +323,55 @@ function loadMessages() {
         div.appendChild(p);
       }
       if (data.type === "image" && data.url) {
+        const wrap = document.createElement("div");
+        wrap.className = "media-wrap";
+
         const img = document.createElement("img");
         img.src = data.url;
+        img.alt = "صورة مرسلة";
+        img.onclick = (e) => {
+          e.stopPropagation();
+          window.openMediaLightbox("image", data.url);
+        };
         img.onload = () => { messagesDiv.scrollTop = messagesDiv.scrollHeight; };
-        div.appendChild(img);
+
+        const expandBtn = document.createElement("button");
+        expandBtn.type = "button";
+        expandBtn.className = "expand-media-btn";
+        expandBtn.textContent = "⛶";
+        expandBtn.title = "فتح الصورة";
+        expandBtn.onclick = (e) => {
+          e.stopPropagation();
+          window.openMediaLightbox("image", data.url);
+        };
+
+        wrap.appendChild(img);
+        wrap.appendChild(expandBtn);
+        div.appendChild(wrap);
       }
       if (data.type === "video" && data.url) {
+        const wrap = document.createElement("div");
+        wrap.className = "media-wrap";
+
         const vid = document.createElement("video");
         vid.src = data.url;
         vid.controls = true;
         vid.playsInline = true;
-        div.appendChild(vid);
+
+        const expandBtn = document.createElement("button");
+        expandBtn.type = "button";
+        expandBtn.className = "expand-media-btn";
+        expandBtn.textContent = "⛶ فتح";
+        expandBtn.title = "فتح الفيديو في العارض";
+        expandBtn.onclick = (e) => {
+          e.stopPropagation();
+          vid.pause();
+          window.openMediaLightbox("video", data.url);
+        };
+
+        wrap.appendChild(vid);
+        wrap.appendChild(expandBtn);
+        div.appendChild(wrap);
       }
       if (data.type === "audio" && data.url) {
         const aud = document.createElement("audio");
